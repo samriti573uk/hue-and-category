@@ -948,6 +948,21 @@ function hexToRgb(hex){
   return [parseInt(hex.substring(0,2),16), parseInt(hex.substring(2,4),16), parseInt(hex.substring(4,6),16)];
 }
 
+// Grid thumbnails, the custom-builder preview, and the before/after slider only ever
+// display at a couple hundred pixels on screen — but if every one of those elements
+// keeps a full working-resolution canvas alive, a page with 8+ of them at once can push
+// iOS Safari over its per-page canvas memory budget, which corrupts rendering rather
+// than erroring cleanly. Route every on-screen copy through this so nothing keeps more
+// pixels alive than it actually displays.
+function makeThumbnail(srcCanvas, maxSize){
+  const scale = Math.min(1, maxSize / Math.max(srcCanvas.width, srcCanvas.height));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(srcCanvas.width*scale);
+  cv.height = Math.round(srcCanvas.height*scale);
+  cv.getContext('2d').drawImage(srcCanvas, 0, 0, cv.width, cv.height);
+  return cv;
+}
+
 // WCAG relative luminance + contrast ratio
 function relLuminance(hex){
   const [r,g,b] = hexToRgb(hex).map(v=>{
@@ -1462,7 +1477,7 @@ function handleFile(file){
     const img = new Image();
     img.onload = ()=>{
       const cv = document.createElement('canvas');
-      const maxDim = 500;
+      const maxDim = 420; // iOS Safari has a hard limit on total canvas memory across a page —
       const scale = Math.min(1, maxDim/Math.max(img.width,img.height));
       cv.width = img.width*scale; cv.height = img.height*scale;
       cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
@@ -1586,9 +1601,10 @@ function onCustomColorChange(){
   const customPalette = {stops:[c1,c2,c3]};
   const result = recolor(state.originalCanvas, customPalette);
   const cv = document.getElementById('customPreviewCanvas');
-  cv.width = result.width; cv.height = result.height;
+  const thumb = makeThumbnail(result, 300); // preview only ever needs on-screen size; state.customCanvas below keeps full resolution for the actual download
+  cv.width = thumb.width; cv.height = thumb.height;
   cv.getContext('2d').clearRect(0,0,cv.width,cv.height);
-  cv.getContext('2d').drawImage(result,0,0);
+  cv.getContext('2d').drawImage(thumb,0,0);
   state.customCanvas = result;
   document.getElementById('customContrastNote').innerHTML =
     contrastBadge(c1) + contrastBadge(c2) + contrastBadge(c3);
@@ -1641,10 +1657,7 @@ function renderCompareGrid(){
   origCard.className='palette-card original';
   const origWrap = document.createElement('div');
   origWrap.className='palette-canvas-wrap';
-  const origCv = document.createElement('canvas');
-  origCv.width = state.originalCanvas.width; origCv.height = state.originalCanvas.height;
-  origCv.getContext('2d').drawImage(state.originalCanvas,0,0);
-  origWrap.appendChild(origCv);
+  origWrap.appendChild(makeThumbnail(state.originalCanvas, 260));
   origCard.appendChild(origWrap);
   const origMeta = document.createElement('div');
   origMeta.className='palette-meta';
@@ -1663,10 +1676,7 @@ function renderCompareGrid(){
     card.dataset.id = g.palette.id;
     const wrap = document.createElement('div');
     wrap.className='palette-canvas-wrap';
-    const cv = document.createElement('canvas');
-    cv.width = g.canvas.width; cv.height = g.canvas.height;
-    cv.getContext('2d').drawImage(g.canvas,0,0);
-    wrap.appendChild(cv);
+    wrap.appendChild(makeThumbnail(g.canvas, 260));
     card.appendChild(wrap);
     const meta = document.createElement('div');
     meta.className='palette-meta';
@@ -1718,9 +1728,9 @@ function openDetail(paletteId){
 
   const dcAfter = document.getElementById('detailCanvasAfter');
   const dcBefore = document.getElementById('detailCanvasBefore');
-  [dcAfter, dcBefore].forEach(c=>{ c.width=640; c.height=480; });
-  drawFitted(dcAfter.getContext('2d'), g.canvas, 640, 480);
-  drawFitted(dcBefore.getContext('2d'), state.originalCanvas, 640, 480);
+  [dcAfter, dcBefore].forEach(c=>{ c.width=440; c.height=330; });
+  drawFitted(dcAfter.getContext('2d'), g.canvas, 440, 330);
+  drawFitted(dcBefore.getContext('2d'), state.originalCanvas, 440, 330);
   document.getElementById('compareRange').value = 50;
   onCompareRange(50);
 
